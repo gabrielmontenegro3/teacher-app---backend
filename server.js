@@ -19,6 +19,7 @@ app.use(express.json());
 
 // Armazenamento em memória (sem banco de dados)
 const users = new Map(); // socketId -> { name, type, socket }
+const usersREST = new Map(); // userId -> { name, type, userId }
 const questions = []; // Array de questões criadas
 const answers = new Map(); // questionId -> [{ userId, userName, answer }]
 
@@ -196,11 +197,242 @@ io.on('connection', (socket) => {
   });
 });
 
+// ==================== ENDPOINTS REST API ====================
+
+// Middleware para validar usuário autenticado
+const validateUser = (req, res, next) => {
+  const userId = req.headers['user-id'] || req.body.userId;
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'User-ID é obrigatório no header ou body' });
+  }
+
+  const user = usersREST.get(userId);
+  if (!user) {
+    return res.status(401).json({ error: 'Usuário não encontrado. Faça login primeiro.' });
+  }
+
+  req.user = user;
+  next();
+};
+
+// Middleware para validar se é teacher
+const validateTeacher = (req, res, next) => {
+  if (req.user.type !== 'teacher') {
+    return res.status(403).json({ error: 'Apenas teachers podem realizar esta ação.' });
+  }
+  next();
+};
+
+// Middleware para validar se é student
+const validateStudent = (req, res, next) => {
+  if (req.user.type !== 'student') {
+    return res.status(403).json({ error: 'Apenas students podem realizar esta ação.' });
+  }
+  next();
+};
+
+// POST /api/users/join - Entrar no sistema
+app.post('/api/users/join', (req, res) => {
+  const { name, type } = req.body;
+
+  if (!name || !type || (type !== 'teacher' && type !== 'student')) {
+    return res.status(400).json({ 
+      error: 'Dados inválidos. Nome e tipo (teacher/student) são obrigatórios.' 
+    });
+  }
+
+  const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  const user = {
+    userId,
+    name,
+    type
+  };
+
+  usersREST.set(userId, user);
+
+  // Broadcast via Socket.io para usuários conectados
+  io.emit('user:new', {
+    userId,
+    name,
+    type
+  });
+
+  console.log(`${type} ${name} entrou no sistema via REST (ID: ${userId})`);
+
+  res.status(201).json({
+    success: true,
+    user: {
+      userId,
+      name,
+      type
+    }
+  });
+});
+
+// GET /api/questions - Listar todas as questões
+app.get('/api/questions', (req, res) => {
+  res.json({
+    success: true,
+    questions: questions
+  });
+});
+
+// GET /api/questions/:id - Obter uma questão específica
+app.get('/api/questions/:id', (req, res) => {
+  const { id } = req.params;
+  const question = questions.find(q => q.id === id);
+
+  if (!question) {
+    return res.status(404).json({ error: 'Questão não encontrada.' });
+  }
+
+  res.json({
+    success: true,
+    question
+  });
+});
+
+// POST /api/questions - Criar questão (apenas teacher)
+app.post('/api/questions', validateUser, validateTeacher, (req, res) => {
+  const { question, options, correctAnswer } = req.body;
+
+  if (!question) {
+    return res.status(400).json({ error: 'A questão é obrigatória.' });
+  }
+
+  const newQuestion = {
+    id: Date.now().toString(),
+    question,
+    options: options || [],
+    correctAnswer: correctAnswer || null,
+    createdBy: req.user.name,
+    createdAt: new Date().toISOString()
+  };
+
+  questions.push(newQuestion);
+  answers.set(newQuestion.id, []);
+
+  // Broadcast via Socket.io para usuários conectados
+  io.emit('question:new', newQuestion);
+
+  console.log(`Teacher ${req.user.name} criou questão via REST: ${question}`);
+
+  res.status(201).json({
+    success: true,
+    question: newQuestion
+  });
+});
+
+// DELETE /api/questions/:id - Deletar questão (apenas teacher)
+app.delete('/api/questions/:id', validateUser, validateTeacher, (req, res) => {
+  const { id } = req.params;
+
+  const questionIndex = questions.findIndex(q => q.id === id);
+  if (questionIndex === -1) {
+    return res.status(404).json({ error: 'Questão não encontrada.' });
+  }
+
+  questions.splice(questionIndex, 1);
+  answers.delete(id);
+
+  // Broadcast via Socket.io para usuários conectados
+  io.emit('question:deleted', { questionId: id });
+
+  console.log(`Teacher ${req.user.name} deletou questão via REST: ${id}`);
+
+  res.json({
+    success: true,
+    message: 'Questão deletada com sucesso.'
+  });
+});
+
+// POST /api/answers - Enviar resposta (apenas student)
+app.post('/api/answers', validateUser, validateStudent, (req, res) => {
+  const { questionId, answer } = req.body;
+
+  if (!questionId || answer === undefined || answer === null) {
+    return res.status(400).json({ 
+      error: 'ID da questão e resposta são obrigatórios.' 
+    });
+  }
+
+  const question = questions.find(q => q.id === questionId);
+  if (!question) {
+    return res.status(404).json({ error: 'Questão não encontrada.' });
+  }
+
+  const questionAnswers = answers.get(questionId) || [];
+  const existingAnswerIndex = questionAnswers.findIndex(a => a.userId === req.user.userId);
+
+  const answerData = {
+    userId: req.user.userId,
+    userName: req.user.name,
+    answer,
+    submittedAt: new Date().toISOString()
+  };
+
+  if (existingAnswerIndex !== -1) {
+    questionAnswers[existingAnswerIndex] = {
+      ...answerData,
+      updatedAt: new Date().toISOString()
+    };
+  } else {
+    questionAnswers.push(answerData);
+  }
+
+  answers.set(questionId, questionAnswers);
+
+  // Broadcast via Socket.io para usuários conectados
+  io.emit('answer:new', {
+    questionId,
+    answer: answerData,
+    allAnswers: questionAnswers
+  });
+
+  console.log(`Student ${req.user.name} respondeu questão via REST ${questionId}: ${answer}`);
+
+  res.status(201).json({
+    success: true,
+    answer: answerData,
+    allAnswers: questionAnswers
+  });
+});
+
+// GET /api/answers/:questionId - Listar respostas de uma questão
+app.get('/api/answers/:questionId', (req, res) => {
+  const { questionId } = req.params;
+
+  const question = questions.find(q => q.id === questionId);
+  if (!question) {
+    return res.status(404).json({ error: 'Questão não encontrada.' });
+  }
+
+  const questionAnswers = answers.get(questionId) || [];
+
+  res.json({
+    success: true,
+    questionId,
+    answers: questionAnswers,
+    total: questionAnswers.length
+  });
+});
+
+// GET /api/users/me - Obter informações do usuário atual
+app.get('/api/users/me', validateUser, (req, res) => {
+  res.json({
+    success: true,
+    user: req.user
+  });
+});
+
 // Rota de health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    users: users.size,
+    usersSocket: users.size,
+    usersREST: usersREST.size,
     questions: questions.length 
   });
 });
