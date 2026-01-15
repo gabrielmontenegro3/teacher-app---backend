@@ -7,23 +7,31 @@ Este backend oferece endpoints REST HTTP para todas as funcionalidades. Você po
 
 ## Autenticação
 
-A autenticação é simples: após fazer login, você receberá um `userId`. Este `userId` deve ser enviado em **todas as requisições** que exigem autenticação através do header `User-ID`.
+**NÃO É NECESSÁRIO FAZER LOGIN!** 
 
-### Exemplo de uso do header:
+A autenticação é automática: basta enviar `name` e `type` no **body** de cada requisição que exige autenticação. O sistema criará ou encontrará o usuário automaticamente.
+
+### Exemplo de body com autenticação:
 ```javascript
-headers: {
-  'Content-Type': 'application/json',
-  'User-ID': 'user_1234567890_abc123'
+{
+  "name": "João Silva",
+  "type": "teacher",
+  // ... outros campos da requisição
 }
 ```
+
+**Importante:** 
+- `name` e `type` são obrigatórios no body para criar questões (teacher) ou responder (student)
+- O mesmo `name` + `type` sempre retornará o mesmo usuário (consistente)
+- Não é necessário fazer login prévio via `/api/users/join`
 
 ---
 
 ## Endpoints Disponíveis
 
-### 1. POST /api/users/join - Entrar no Sistema
+### 1. POST /api/users/join - Entrar no Sistema (OPCIONAL)
 
-**Descrição:** Registra um novo usuário no sistema e retorna o `userId` necessário para autenticação.
+**Descrição:** Este endpoint é **opcional**. Você pode usá-lo se quiser registrar explicitamente um usuário, mas não é necessário. Você pode simplesmente enviar `name` e `type` diretamente nas requisições de criar questão ou responder.
 
 **Método:** `POST`
 
@@ -53,30 +61,7 @@ headers: {
 }
 ```
 
-**Resposta de Erro (400):**
-```json
-{
-  "error": "Dados inválidos. Nome e tipo (teacher/student) são obrigatórios."
-}
-```
-
-**Exemplo de uso (JavaScript/Fetch):**
-```javascript
-const response = await fetch('http://localhost:3000/api/users/join', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    name: 'João Silva',
-    type: 'teacher'
-  })
-});
-
-const data = await response.json();
-// Salvar data.user.userId para usar nas próximas requisições
-localStorage.setItem('userId', data.user.userId);
-```
+**Nota:** Este endpoint é opcional. Você pode pular este passo e ir direto para criar questões ou responder, enviando `name` e `type` no body.
 
 ---
 
@@ -169,11 +154,13 @@ const question = data.question;
 
 **URL:** `/api/questions`
 
-**Autenticação:** Requerida (header `User-ID`)
+**Autenticação:** Requerida (envie `name` e `type` no body)
 
 **Body (JSON):**
 ```json
 {
+  "name": "João Silva",
+  "type": "teacher",
   "question": "Qual é a capital do Brasil?",
   "options": ["São Paulo", "Rio de Janeiro", "Brasília", "Salvador"],
   "correctAnswer": "Brasília"
@@ -181,6 +168,8 @@ const question = data.question;
 ```
 
 **Campos:**
+- `name` (string, obrigatório): Nome do teacher
+- `type` (string, obrigatório): Deve ser `"teacher"`
 - `question` (string, obrigatório): Texto da questão
 - `options` (array, opcional): Array de opções de resposta
 - `correctAnswer` (qualquer tipo, opcional): Resposta correta
@@ -203,14 +192,15 @@ const question = data.question;
 **Resposta de Erro (400):**
 ```json
 {
-  "error": "A questão é obrigatória."
+  "error": "Nome e tipo (teacher/student) são obrigatórios no body da requisição."
 }
 ```
 
-**Resposta de Erro (401):**
+ou
+
 ```json
 {
-  "error": "User-ID é obrigatório no header ou body"
+  "error": "A questão é obrigatória."
 }
 ```
 
@@ -223,15 +213,14 @@ const question = data.question;
 
 **Exemplo de uso:**
 ```javascript
-const userId = localStorage.getItem('userId');
-
 const response = await fetch('http://localhost:3000/api/questions', {
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json',
-    'User-ID': userId
+    'Content-Type': 'application/json'
   },
   body: JSON.stringify({
+    name: 'João Silva',
+    type: 'teacher',
     question: 'Qual é a capital do Brasil?',
     options: ['São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador'],
     correctAnswer: 'Brasília'
@@ -254,13 +243,28 @@ const data = await response.json();
 **Parâmetros:**
 - `id` (string, obrigatório): ID da questão
 
-**Autenticação:** Requerida (header `User-ID`)
+**Autenticação:** Requerida (envie `name` e `type` no body)
+
+**Body (JSON):**
+```json
+{
+  "name": "João Silva",
+  "type": "teacher"
+}
+```
 
 **Resposta de Sucesso (200):**
 ```json
 {
   "success": true,
   "message": "Questão deletada com sucesso."
+}
+```
+
+**Resposta de Erro (400):**
+```json
+{
+  "error": "Nome e tipo (teacher/student) são obrigatórios no body da requisição."
 }
 ```
 
@@ -280,14 +284,17 @@ const data = await response.json();
 
 **Exemplo de uso:**
 ```javascript
-const userId = localStorage.getItem('userId');
 const questionId = '1234567890';
 
 const response = await fetch(`http://localhost:3000/api/questions/${questionId}`, {
   method: 'DELETE',
   headers: {
-    'User-ID': userId
-  }
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    name: 'João Silva',
+    type: 'teacher'
+  })
 });
 
 const data = await response.json();
@@ -303,17 +310,21 @@ const data = await response.json();
 
 **URL:** `/api/answers`
 
-**Autenticação:** Requerida (header `User-ID`)
+**Autenticação:** Requerida (envie `name` e `type` no body)
 
 **Body (JSON):**
 ```json
 {
+  "name": "Maria Santos",
+  "type": "student",
   "questionId": "1234567890",
   "answer": "Brasília"
 }
 ```
 
 **Campos:**
+- `name` (string, obrigatório): Nome do student
+- `type` (string, obrigatório): Deve ser `"student"`
 - `questionId` (string, obrigatório): ID da questão
 - `answer` (qualquer tipo, obrigatório): Resposta do aluno
 
@@ -347,6 +358,14 @@ const data = await response.json();
 **Resposta de Erro (400):**
 ```json
 {
+  "error": "Nome e tipo (teacher/student) são obrigatórios no body da requisição."
+}
+```
+
+ou
+
+```json
+{
   "error": "ID da questão e resposta são obrigatórios."
 }
 ```
@@ -367,15 +386,14 @@ const data = await response.json();
 
 **Exemplo de uso:**
 ```javascript
-const userId = localStorage.getItem('userId');
-
 const response = await fetch('http://localhost:3000/api/answers', {
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json',
-    'User-ID': userId
+    'Content-Type': 'application/json'
   },
   body: JSON.stringify({
+    name: 'Maria Santos',
+    type: 'student',
     questionId: '1234567890',
     answer: 'Brasília'
   })
@@ -440,41 +458,9 @@ const answers = data.answers;
 
 ---
 
-### 8. GET /api/users/me - Obter Informações do Usuário Atual
+### 8. GET /api/users/me - Obter Informações do Usuário Atual (DEPRECADO)
 
-**Descrição:** Retorna informações do usuário autenticado.
-
-**Método:** `GET`
-
-**URL:** `/api/users/me`
-
-**Autenticação:** Requerida (header `User-ID`)
-
-**Resposta de Sucesso (200):**
-```json
-{
-  "success": true,
-  "user": {
-    "userId": "user_1234567890_abc123",
-    "name": "João Silva",
-    "type": "teacher"
-  }
-}
-```
-
-**Exemplo de uso:**
-```javascript
-const userId = localStorage.getItem('userId');
-
-const response = await fetch('http://localhost:3000/api/users/me', {
-  headers: {
-    'User-ID': userId
-  }
-});
-
-const data = await response.json();
-const user = data.user;
-```
+**Descrição:** Este endpoint está deprecado. Como não é mais necessário fazer login, você já sabe o nome e tipo do usuário (você mesmo enviou). Não há necessidade de consultar este endpoint.
 
 ---
 
@@ -502,11 +488,26 @@ const user = data.user;
 
 ## Fluxo Completo de Uso
 
-### 1. Tela de Login/Entrada
+### 1. Tela de Entrada (Apenas Informar Nome e Tipo)
 
 ```javascript
-// Usuário informa nome e tipo
-const handleLogin = async (name, type) => {
+// Usuário informa nome e tipo - NÃO precisa fazer login!
+const handleEnter = (name, type) => {
+  // Apenas salvar localmente para usar nas próximas requisições
+  localStorage.setItem('userName', name);
+  localStorage.setItem('userType', type);
+  
+  // Redirecionar para tela principal
+  navigate('/dashboard');
+};
+
+// OU, se quiser validar no servidor (opcional):
+const handleEnter = async (name, type) => {
+  // Salvar localmente
+  localStorage.setItem('userName', name);
+  localStorage.setItem('userType', type);
+  
+  // Opcional: validar no servidor (não necessário)
   try {
     const response = await fetch('http://localhost:3000/api/users/join', {
       method: 'POST',
@@ -515,21 +516,12 @@ const handleLogin = async (name, type) => {
       },
       body: JSON.stringify({ name, type })
     });
-
-    const data = await response.json();
-    
-    if (data.success) {
-      // Salvar userId para usar nas próximas requisições
-      localStorage.setItem('userId', data.user.userId);
-      localStorage.setItem('userName', data.user.name);
-      localStorage.setItem('userType', data.user.type);
-      
-      // Redirecionar para tela principal
-      navigate('/dashboard');
-    }
+    // ... tratamento de resposta
   } catch (error) {
-    console.error('Erro ao fazer login:', error);
+    console.error('Erro:', error);
   }
+  
+  navigate('/dashboard');
 };
 ```
 
@@ -553,15 +545,21 @@ useEffect(() => {
 
 // Criar questão
 const createQuestion = async (question, options, correctAnswer) => {
-  const userId = localStorage.getItem('userId');
+  const name = localStorage.getItem('userName');
+  const type = localStorage.getItem('userType');
   
   const response = await fetch('http://localhost:3000/api/questions', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'User-ID': userId
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ question, options, correctAnswer })
+    body: JSON.stringify({ 
+      name, 
+      type, 
+      question, 
+      options, 
+      correctAnswer 
+    })
   });
   
   const data = await response.json();
@@ -572,13 +570,15 @@ const createQuestion = async (question, options, correctAnswer) => {
 
 // Deletar questão
 const deleteQuestion = async (questionId) => {
-  const userId = localStorage.getItem('userId');
+  const name = localStorage.getItem('userName');
+  const type = localStorage.getItem('userType');
   
   const response = await fetch(`http://localhost:3000/api/questions/${questionId}`, {
     method: 'DELETE',
     headers: {
-      'User-ID': userId
-    }
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name, type })
   });
   
   const data = await response.json();
@@ -618,15 +618,20 @@ useEffect(() => {
 
 // Responder questão
 const submitAnswer = async (questionId, answer) => {
-  const userId = localStorage.getItem('userId');
+  const name = localStorage.getItem('userName');
+  const type = localStorage.getItem('userType');
   
   const response = await fetch('http://localhost:3000/api/answers', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'User-ID': userId
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ questionId, answer })
+    body: JSON.stringify({ 
+      name, 
+      type, 
+      questionId, 
+      answer 
+    })
   });
   
   const data = await response.json();
@@ -683,10 +688,9 @@ const handleRequest = async (url, options) => {
 
 - `200` - Sucesso (GET, DELETE)
 - `201` - Criado com sucesso (POST)
-- `400` - Dados inválidos
-- `401` - Não autenticado (User-ID faltando ou inválido)
-- `403` - Sem permissão (tipo de usuário incorreto)
-- `404` - Recurso não encontrado
+- `400` - Dados inválidos (name/type faltando, tipo inválido, etc.)
+- `403` - Sem permissão (tipo de usuário incorreto - ex: student tentando criar questão)
+- `404` - Recurso não encontrado (questão não existe)
 - `500` - Erro interno do servidor
 
 ---
@@ -729,11 +733,13 @@ interface User {
 
 ## Notas Importantes
 
-1. **Autenticação:** Sempre envie o `User-ID` no header para requisições que exigem autenticação.
+1. **Autenticação:** NÃO é necessário fazer login! Apenas envie `name` e `type` no body de cada requisição que exige autenticação. O sistema criará ou encontrará o usuário automaticamente.
 
-2. **Tempo Real:** Os endpoints REST não fornecem atualizações em tempo real. Para isso, use Socket.io (veja `INTEGRACAO_FRONTEND.md`) ou implemente polling (atualizar dados periodicamente).
+2. **Consistência:** O mesmo `name` + `type` sempre retornará o mesmo usuário, garantindo que respostas sejam associadas corretamente.
 
-3. **Polling:** Para simular tempo real com REST, você pode fazer requisições periódicas:
+3. **Tempo Real:** Os endpoints REST não fornecem atualizações em tempo real. Para isso, use Socket.io (veja `INTEGRACAO_FRONTEND.md`) ou implemente polling (atualizar dados periodicamente).
+
+4. **Polling:** Para simular tempo real com REST, você pode fazer requisições periódicas:
    ```javascript
    setInterval(async () => {
      const response = await fetch('http://localhost:3000/api/questions');
@@ -742,11 +748,11 @@ interface User {
    }, 2000); // Atualizar a cada 2 segundos
    ```
 
-4. **Armazenamento:** Salve o `userId` após o login (localStorage, sessionStorage, ou estado da aplicação).
+5. **Armazenamento:** Salve apenas `name` e `type` localmente (localStorage, sessionStorage, ou estado da aplicação). Não é necessário salvar `userId`.
 
-5. **CORS:** O servidor está configurado para aceitar requisições de qualquer origem. Em produção, configure adequadamente.
+6. **CORS:** O servidor está configurado para aceitar requisições de qualquer origem. Em produção, configure adequadamente.
 
-6. **Sem Persistência:** Todos os dados são armazenados em memória. Ao reiniciar o servidor, tudo é perdido.
+7. **Sem Persistência:** Todos os dados são armazenados em memória. Ao reiniciar o servidor, tudo é perdido.
 
 ---
 
@@ -756,28 +762,20 @@ interface User {
 import { useState, useEffect } from 'react';
 
 function useTeacherApp() {
-  const [userId, setUserId] = useState(localStorage.getItem('userId'));
-  const [user, setUser] = useState(null);
+  const [userName, setUserName] = useState(localStorage.getItem('userName'));
+  const [userType, setUserType] = useState(localStorage.getItem('userType'));
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
 
   const API_BASE = 'http://localhost:3000/api';
 
-  // Login
-  const login = async (name, type) => {
-    const response = await fetch(`${API_BASE}/users/join`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, type })
-    });
-    const data = await response.json();
-    if (data.success) {
-      localStorage.setItem('userId', data.user.userId);
-      setUserId(data.user.userId);
-      setUser(data.user);
-      return data.user;
-    }
-    throw new Error(data.error);
+  // Entrar no sistema (apenas salvar localmente)
+  const enter = (name, type) => {
+    localStorage.setItem('userName', name);
+    localStorage.setItem('userType', type);
+    setUserName(name);
+    setUserType(type);
+    return { name, type };
   };
 
   // Carregar questões
@@ -794,10 +792,15 @@ function useTeacherApp() {
     const response = await fetch(`${API_BASE}/questions`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'User-ID': userId
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ question, options, correctAnswer })
+      body: JSON.stringify({ 
+        name: userName, 
+        type: userType, 
+        question, 
+        options, 
+        correctAnswer 
+      })
     });
     const data = await response.json();
     if (data.success) {
@@ -811,10 +814,14 @@ function useTeacherApp() {
     const response = await fetch(`${API_BASE}/answers`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'User-ID': userId
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ questionId, answer })
+      body: JSON.stringify({ 
+        name: userName, 
+        type: userType, 
+        questionId, 
+        answer 
+      })
     });
     const data = await response.json();
     if (data.success) {
@@ -841,19 +848,19 @@ function useTeacherApp() {
 
   // Auto-carregar questões
   useEffect(() => {
-    if (userId) {
+    if (userName && userType) {
       loadQuestions();
       const interval = setInterval(loadQuestions, 2000);
       return () => clearInterval(interval);
     }
-  }, [userId]);
+  }, [userName, userType]);
 
   return {
-    userId,
-    user,
+    userName,
+    userType,
     questions,
     answers,
-    login,
+    enter,
     loadQuestions,
     createQuestion,
     submitAnswer,

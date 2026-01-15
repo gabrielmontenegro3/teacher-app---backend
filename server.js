@@ -199,17 +199,55 @@ io.on('connection', (socket) => {
 
 // ==================== ENDPOINTS REST API ====================
 
-// Middleware para validar usuário autenticado
-const validateUser = (req, res, next) => {
-  const userId = req.headers['user-id'] || req.body.userId;
-  
-  if (!userId) {
-    return res.status(401).json({ error: 'User-ID é obrigatório no header ou body' });
+// Função auxiliar para obter ou criar usuário
+// Usa uma chave baseada em nome+tipo para garantir consistência
+const getOrCreateUser = (name, type) => {
+  if (!name || !type || (type !== 'teacher' && type !== 'student')) {
+    return null;
   }
 
-  const user = usersREST.get(userId);
+  // Cria uma chave única baseada em nome e tipo
+  const userKey = `${name}_${type}`;
+
+  // Procura usuário existente com mesmo nome e tipo
+  for (const [userId, user] of usersREST.entries()) {
+    if (user.name === name && user.type === type) {
+      return user;
+    }
+  }
+
+  // Cria novo usuário se não existir
+  // Usa hash simples do nome+tipo para gerar userId consistente
+  const userId = `user_${Buffer.from(userKey).toString('base64').substring(0, 20)}_${Date.now()}`;
+  const user = {
+    userId,
+    name,
+    type
+  };
+
+  usersREST.set(userId, user);
+  return user;
+};
+
+// Middleware para validar usuário autenticado (aceita name e type diretamente)
+const validateUser = (req, res, next) => {
+  const { name, type } = req.body;
+  
+  if (!name || !type) {
+    return res.status(400).json({ 
+      error: 'Nome e tipo (teacher/student) são obrigatórios no body da requisição.' 
+    });
+  }
+
+  if (type !== 'teacher' && type !== 'student') {
+    return res.status(400).json({ 
+      error: 'Tipo deve ser "teacher" ou "student".' 
+    });
+  }
+
+  const user = getOrCreateUser(name, type);
   if (!user) {
-    return res.status(401).json({ error: 'Usuário não encontrado. Faça login primeiro.' });
+    return res.status(400).json({ error: 'Dados inválidos.' });
   }
 
   req.user = user;
@@ -364,7 +402,8 @@ app.post('/api/answers', validateUser, validateStudent, (req, res) => {
   }
 
   const questionAnswers = answers.get(questionId) || [];
-  const existingAnswerIndex = questionAnswers.findIndex(a => a.userId === req.user.userId);
+  // Usa userName para encontrar resposta existente (mais consistente que userId)
+  const existingAnswerIndex = questionAnswers.findIndex(a => a.userName === req.user.name);
 
   const answerData = {
     userId: req.user.userId,
